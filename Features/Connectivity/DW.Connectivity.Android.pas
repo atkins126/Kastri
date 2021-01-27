@@ -13,16 +13,43 @@ unit DW.Connectivity.Android;
 
 {$I DW.GlobalDefines.inc}
 
+// **** NOTE **** If the target device has API level 21 or greater, you need to add dw-kastri-bade.jar from the Lib folder to the Libraries node of the 
+// Android platform of the project in Project Manager
+
 interface
 
 uses
   // Android
-  Androidapi.JNI.Net, Androidapi.JNI.GraphicsContentViewText,
+  Androidapi.JNI.Net, Androidapi.JNI.GraphicsContentViewText, Androidapi.JNIBridge,
   // DW
-  DW.MultiReceiver.Android, DW.Connectivity;
+  DW.Androidapi.JNI.DWNetworkCallback, DW.MultiReceiver.Android, DW.Connectivity;
 
 type
   TPlatformConnectivity = class;
+
+  TNetworks = TArray<JNetwork>;
+
+  TNetworkCallbackDelegate = class(TJavaLocal, JDWNetworkCallbackDelegate)
+  private
+    class var FConnectivityManager: JConnectivityManager;
+  private
+    FCallback: JDWNetworkCallback;
+    FConnectedNetworks: TNetworks;
+    FPlatformConnectivity: TPlatformConnectivity;
+    function IsConnectedToInternet: Boolean;
+    function IndexOfNetwork(const ANetwork: JNetwork): Integer;
+  protected
+    class function ConnectivityManager: JConnectivityManager; static;
+    class function GetConnectedNetworkInfoFromNetwork(const ANetwork: JNetwork; const ASkipValidation: Boolean): JNetworkInfo; static;
+    class function GetConnectedNetworkInfo(const ASkipValidation: Boolean): JNetworkInfo; static;
+  public
+    { JDWNetworkCallbackDelegate }
+    procedure onAvailable(network: JNetwork); cdecl;
+    procedure onLost(network: JNetwork); cdecl;
+    procedure onUnavailable; cdecl;
+  public
+    constructor Create(const APlatformConnectivity: TPlatformConnectivity);
+  end;
 
   TConnectivityReceiver = class(TMultiReceiver)
   private
@@ -36,14 +63,14 @@ type
 
   TPlatformConnectivity = class(TObject)
   private
+    FCallbackDelegate: JDWNetworkCallbackDelegate;
     FConnectivity: TConnectivity;
+    FIsConnectedToInternet: Boolean;
     FReceiver: TConnectivityReceiver;
-  private
-    class function ConnectivityManager: JConnectivityManager; static;
   protected
-    procedure ConnectivityChange(const AConnectivity: Boolean);
+    procedure ConnectivityChange(const AIsConnected: Boolean);
+    function SkipValidation: Boolean;
   public
-    class function GetConnectedNetworkInfo: JNetworkInfo; static;
     class function IsConnectedToInternet: Boolean; static;
     class function IsWifiInternetConnection: Boolean; static;
   public
@@ -54,11 +81,154 @@ type
 implementation
 
 uses
+  DW.OSLog,
+  System.SysUtils,
   // Android
-  Androidapi.JNI.JavaTypes, Androidapi.Helpers, Androidapi.JNI.Os, Androidapi.JNIBridge, Androidapi.JNI;
+  Androidapi.JNI.JavaTypes, Androidapi.Helpers, Androidapi.JNI.Os;
 
 type
   TOpenConnectivity = class(TConnectivity);
+
+{ TNetworkCallbackDelegate }
+
+constructor TNetworkCallbackDelegate.Create(const APlatformConnectivity: TPlatformConnectivity);
+begin
+  inherited Create;
+  FCallback := TJDWNetworkCallback.JavaClass.init(TAndroidHelper.Context, Self);
+  FPlatformConnectivity := APlatformConnectivity;
+end;
+
+function TNetworkCallbackDelegate.IsConnectedToInternet: Boolean;
+var
+  LNetworks: TJavaObjectArray<JNetwork>;
+  I: Integer;
+begin
+  Result := False;
+  LNetworks := ConnectivityManager.getAllNetworks;
+  try
+    for I := 0 to LNetworks.Length - 1 do
+    begin
+      if GetConnectedNetworkInfoFromNetwork(LNetworks[I], FPlatformConnectivity.SkipValidation) <> nil then
+      begin
+        Result := True;
+        Break;
+      end;
+    end;
+  finally
+    LNetworks.Sync;
+  end;
+end;
+
+function TNetworkCallbackDelegate.IndexOfNetwork(const ANetwork: JNetwork): Integer;
+var
+  I: Integer;
+begin
+  Result := -1;
+  for I := 0 to Length(FConnectedNetworks) - 1 do
+  begin
+    if FConnectedNetworks[I] = ANetwork then
+    begin
+      Result := I;
+      Break;
+    end;
+  end;
+end;
+
+class function TNetworkCallbackDelegate.ConnectivityManager: JConnectivityManager;
+var
+  LService: JObject;
+begin
+  if FConnectivityManager = nil then
+  begin
+    LService := TAndroidHelper.Context.getSystemService(TJContext.JavaClass.CONNECTIVITY_SERVICE);
+    FConnectivityManager := TJConnectivityManager.Wrap(LService);
+  end;
+  Result := FConnectivityManager;
+end;
+
+procedure TNetworkCallbackDelegate.onAvailable(network: JNetwork);
+begin
+  TOSLog.d('TDWNetworkCallbackDelegate.onAvailable');
+  FPlatformConnectivity.ConnectivityChange(IsConnectedToInternet);
+end;
+
+procedure TNetworkCallbackDelegate.onLost(network: JNetwork);
+begin
+  TOSLog.d('TDWNetworkCallbackDelegate.onLost');
+  FPlatformConnectivity.ConnectivityChange(IsConnectedToInternet);
+end;
+
+procedure TNetworkCallbackDelegate.onUnavailable;
+begin
+  //
+end;
+
+// Based on: https://github.com/jamesmontemagno/ConnectivityPlugin/issues/56
+class function TNetworkCallbackDelegate.GetConnectedNetworkInfo(const ASkipValidation: Boolean): JNetworkInfo;
+var
+  LAllNetworks: TJavaObjectArray<JNetwork>;
+  LAllNetworkInfo: TJavaObjectArray<JNetworkInfo>;
+  LInfo: JNetworkInfo;
+  I: Integer;
+begin
+  Result := nil;
+  if TJBuild_VERSION.JavaClass.SDK_INT >= 21 then
+  begin
+    LAllNetworks := ConnectivityManager.getAllNetworks;
+    try
+      for I := 0 to LAllNetworks.Length - 1 do
+      begin
+        LInfo := GetConnectedNetworkInfoFromNetwork(LAllNetworks[I], ASkipValidation);
+        if LInfo <> nil then
+        begin
+          Result := LInfo;
+          Break;
+        end;
+      end;
+    finally
+      LAllNetworks.Sync;
+    end;
+  end
+  else
+  begin
+    LAllNetworkInfo := ConnectivityManager.getAllNetworkInfo;
+    try
+      for I := 0 to LAllNetworkInfo.Length - 1 do
+      begin
+        LInfo := LAllNetworkInfo[I];
+        if (LInfo <> nil) and LInfo.isAvailable and LInfo.isConnected then
+        begin
+          Result := LInfo;
+          Break;
+        end;
+      end;
+    finally
+      LAllNetworkInfo.Sync;
+    end;
+  end;
+end;
+
+class function TNetworkCallbackDelegate.GetConnectedNetworkInfoFromNetwork(const ANetwork: JNetwork; const ASkipValidation: Boolean): JNetworkInfo;
+var
+  LCapabilities: JNetworkCapabilities;
+  LInfo: JNetworkInfo;
+begin
+  LInfo := nil;
+  LCapabilities := ConnectivityManager.getNetworkCapabilities(ANetwork);
+  // Check if the network has internet capability
+  if (LCapabilities <> nil) and LCapabilities.hasCapability(TJNetworkCapabilities.JavaClass.NET_CAPABILITY_INTERNET) then
+  begin
+    // ..and is Validated or SDK < 23
+    if ASkipValidation or (TJBuild_VERSION.JavaClass.SDK_INT < 23) or LCapabilities.hasCapability(TJNetworkCapabilities.JavaClass.NET_CAPABILITY_VALIDATED) then
+    begin
+      LInfo := ConnectivityManager.getNetworkInfo(ANetwork);
+      if (LInfo <> nil) and LInfo.isAvailable and LInfo.isConnected then
+        Result := LInfo;
+    end;
+    // else
+    //   TOSLog.d('Not validated');
+  end;
+end;
 
 { TConnectivityReceiver }
 
@@ -74,11 +244,12 @@ begin
 end;
 
 procedure TConnectivityReceiver.Receive(context: JContext; intent: JIntent);
-var
-  LConnectivity: Boolean;
 begin
-  LConnectivity := not intent.getBooleanExtra(TJConnectivityManager.JavaClass.EXTRA_NO_CONNECTIVITY, False);
-  FPlatformConnectivity.ConnectivityChange(LConnectivity);
+  if TJBuild_VERSION.JavaClass.SDK_INT < 21 then
+  begin
+    TOSLog.d('TConnectivityReceiver.Receive');
+    FPlatformConnectivity.ConnectivityChange(TNetworkCallbackDelegate.GetConnectedNetworkInfo(FPlatformConnectivity.SkipValidation) <> nil);
+  end;
 end;
 
 { TPlatformConnectivity }
@@ -87,88 +258,47 @@ constructor TPlatformConnectivity.Create(const AConnectivity: TConnectivity);
 begin
   inherited Create;
   FConnectivity := AConnectivity;
+  FIsConnectedToInternet := IsConnectedToInternet;
+  if TJBuild_VERSION.JavaClass.SDK_INT >= 21 then
+    FCallbackDelegate := TNetworkCallbackDelegate.Create(Self);
   FReceiver := TConnectivityReceiver.Create(Self);
+  TOSLog.d('TPlatformConnectivity.Create > Connected: %s', [BoolToStr(FIsConnectedToInternet, True)]);
 end;
 
 destructor TPlatformConnectivity.Destroy;
 begin
+  // FCallbackDelegate.Free;
   FReceiver.Free;
   inherited;
 end;
 
-class function TPlatformConnectivity.ConnectivityManager: JConnectivityManager;
-var
-  LService: JObject;
-begin
-  LService := TAndroidHelper.Context.getSystemService(TJContext.JavaClass.CONNECTIVITY_SERVICE);
-  Result := TJConnectivityManager.Wrap(LService);
-end;
-
-// Based on: https://github.com/jamesmontemagno/ConnectivityPlugin/issues/56
-class function TPlatformConnectivity.GetConnectedNetworkInfo: JNetworkInfo;
-var
-  LManager: JConnectivityManager;
-  LAllNetworks: TJavaObjectArray<JNetwork>;
-  LAllNetworkInfo: TJavaObjectArray<JNetworkInfo>;
-  LInfo: JNetworkInfo;
-  LCapabilities: JNetworkCapabilities;
-  I: Integer;
-begin
-  Result := nil;
-  LManager := ConnectivityManager;
-  if TJBuild_VERSION.JavaClass.SDK_INT >= 21 then
-  begin
-    LAllNetworks := LManager.getAllNetworks;
-    for I := 0 to LAllNetworks.Length - 1 do
-    begin
-      LCapabilities := LManager.getNetworkCapabilities(LAllNetworks[I]);
-      // Check if the network has internet capability
-      if (LCapabilities <> nil) and LCapabilities.hasCapability(TJNetworkCapabilities.JavaClass.NET_CAPABILITY_INTERNET) then
-      begin
-        // ..and is Validated or SDK < 23
-        if (TJBuild_VERSION.JavaClass.SDK_INT < 23) or LCapabilities.hasCapability(TJNetworkCapabilities.JavaClass.NET_CAPABILITY_VALIDATED) then
-        begin
-          LInfo := LManager.getNetworkInfo(LAllNetworks[I]);
-          if (LInfo <> nil) and LInfo.isAvailable and LInfo.isConnected then
-          begin
-            Result := LInfo;
-            Break;
-          end;
-        end;
-      end;
-    end;
-  end
-  else
-  begin
-    LAllNetworkInfo := LManager.getAllNetworkInfo;
-    for I := 0 to LAllNetworkInfo.Length - 1 do
-    begin
-      LInfo := LAllNetworkInfo[I];
-      if (LInfo <> nil) and LInfo.isAvailable and LInfo.isConnected then
-      begin
-        Result := LInfo;
-        Break;
-      end;
-    end;
-  end;
-end;
-
 class function TPlatformConnectivity.IsConnectedToInternet: Boolean;
 begin
-  Result := GetConnectedNetworkInfo <> nil;
+  Result := TNetworkCallbackDelegate.GetConnectedNetworkInfo(False) <> nil;
 end;
 
 class function TPlatformConnectivity.IsWifiInternetConnection: Boolean;
 var
   LInfo: JNetworkInfo;
 begin
-  LInfo := GetConnectedNetworkInfo;
+  LInfo := TNetworkCallbackDelegate.GetConnectedNetworkInfo(False);
   Result := (LInfo <> nil) and (LInfo.getType = TJConnectivityManager.JavaClass.TYPE_WIFI);
 end;
 
-procedure TPlatformConnectivity.ConnectivityChange(const AConnectivity: Boolean);
+function TPlatformConnectivity.SkipValidation: Boolean;
 begin
-  TOpenConnectivity(FConnectivity).DoConnectivityChange(AConnectivity);
+  Result := FConnectivity.SkipValidation;
+end;
+
+procedure TPlatformConnectivity.ConnectivityChange(const AIsConnected: Boolean);
+begin
+  TOSLog.d('TPlatformConnectivity.ConnectivityChange(%s)', [BoolToStr(AIsConnected, True)]);
+  if FIsConnectedToInternet <> AIsConnected then
+  begin
+    TOSLog.d('> Changed from %s', [BoolToStr(FIsConnectedToInternet, True)]);
+    FIsConnectedToInternet := AIsConnected;
+    TOpenConnectivity(FConnectivity).DoConnectivityChange(FIsConnectedToInternet);
+  end;
 end;
 
 end.
