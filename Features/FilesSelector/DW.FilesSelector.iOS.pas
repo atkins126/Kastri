@@ -6,7 +6,7 @@ unit DW.FilesSelector.iOS;
 {                                                       }
 {         Delphi Worlds Cross-Platform Library          }
 {                                                       }
-{    Copyright 2020 Dave Nottage under MIT license      }
+{  Copyright 2020-2021 Dave Nottage under MIT license   }
 {  which is located in the root folder of this library  }
 {                                                       }
 {*******************************************************}
@@ -97,6 +97,8 @@ type
 implementation
 
 uses
+  // RTL
+  System.IOUtils,
   // macOS
   Macapi.Helpers, 
   // iOS
@@ -138,7 +140,8 @@ begin
   FSelector.FileTypes.Add('public.source-code');
   DestroyController;
   FController := TUIDocumentPickerViewController.Alloc;
-  FController := TUIDocumentPickerViewController.Wrap(FController.initWithDocumentTypes(StringsToNSArray(FSelector.FileTypes), UIDocumentPickerModeOpen));
+  FController := TUIDocumentPickerViewController.Wrap(FController.initWithDocumentTypes(StringsToNSArray(FSelector.FileTypes), UIDocumentPickerModeImport));
+  FController.setAllowsMultipleSelection(True);
   FController.setDelegate(GetObjectID);
   FController.setTitle(StrToNSStr(FSelector.Title));
   TiOSHelper.SharedApplication.keyWindow.rootViewController.presentViewController(FController, True, nil);
@@ -146,16 +149,24 @@ end;
 
 procedure TUIDocumentPickerDelegate.documentPickerDidPickDocumentAtURL(controller: UIDocumentPickerViewController; url: NSURL);
 begin
-  FSelector.Files.Add(NSUrlToStr(url));
-  FSelector.DoComplete(True);
+  //
 end;
 
 procedure TUIDocumentPickerDelegate.documentPickerDidPickDocumentsAtURLs(controller: UIDocumentPickerViewController; urls: NSArray);
 var
   I: Integer;
+  LEscapedFileName: NSString;
+  LSelectedFile: TSelectedFile;
 begin
   for I := 0 to urls.count - 1 do
-    FSelector.Files.Add(NSUrlToStr(TNSURL.Wrap(urls.objectAtIndex(I))));
+  begin
+    LEscapedFileName := TNSURL.Wrap(urls.objectAtIndex(I)).path.stringByReplacingPercentEscapesUsingEncoding(NSUTF8StringEncoding);
+    LSelectedFile.DecodedPath := NSStrToStr(LEscapedFileName);
+    LSelectedFile.RawPath := NSStrToStr(TNSURL.Wrap(urls.objectAtIndex(I)).path);
+    LSelectedFile.DisplayName := TPath.GetFileName(LSelectedFile.DecodedPath);
+    FSelector.Files.Add(LSelectedFile.DecodedPath);
+    FSelector.AddSelectedFile(LSelectedFile);
+  end;
   FSelector.DoComplete(True);
 end;
 
