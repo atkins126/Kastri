@@ -4,7 +4,7 @@
 
 From [Delphi Worlds](http://www.delphiworlds.com)
 
-Compatible with [Embarcadero](https://wwww.embarcadero.com) [Delphi](https://www.embarcadero.com/products/delphi). Please note: Only the **last two point releases of major releases** (e.g. at present that includes 10.3.3 and 10.4.1) are "officially" supported. 
+Compatible with [Embarcadero](https://wwww.embarcadero.com) [Delphi](https://www.embarcadero.com/products/delphi). Please note: Only the **last two point releases of major releases** (e.g. at present that includes 10.3.3 and 10.4.2) are "officially" supported. 
 
 Development of Kastri can be helped along with [Github Sponsorship](https://github.com/sponsors/DelphiWorlds), so please consider sponsoring today!
 
@@ -27,7 +27,9 @@ If you're looking to [learn Delphi, please visit this link](https://learndelphi.
 
 ## How To Use Kastri
 
-With Kastri, there are no components to install. Simply clone the repo ([Fork](https://git-fork.com/) is a highly recommended Git client), or download/unzip and ensure that your Project (recommended) or IDE paths point to the folders of the units that you use.
+For the most part, with Kastri there are no components to install. Simply clone the repo ([Fork](https://git-fork.com/) is a highly recommended Git client), or download/unzip and ensure that your Project (recommended) or IDE paths point to the folders of the units that you use.
+
+The [Native Controls suite (Kastri FMX)](./Controls) is a set of components that can be [installed into Delphi](./Packages) and used at design-time
 
 ## Support
 
@@ -47,11 +49,11 @@ If you would like to join the Delphi Worlds Slack workspace, [please visit this 
 
 ### Demos
 
-You'll find demo applications in the Demos folder, including those associated with articles posted on the [Delphi Worlds blog](http://www.delphiworlds.com/blog)
+You'll find demo applications in the [Demos](./Demos) folder, including those associated with articles posted on the [Delphi Worlds blog](http://www.delphiworlds.com/blog)
 
 ### API imports
 
-In the API folder you will find imports for a number of iOS, Android and Linux APIs that are either not included with Delphi, serve to complete missing APIs, or are imports for Java code contained in Kastri. 
+In the API folder you will find imports for a number of iOS, macOS, Android and Linux APIs that are either not included with Delphi, serve to complete missing APIs, or are imports for Java code contained in Kastri. 
 Most of these are used in the Kastri Features and/or demos however some are included due to interest from developers.
 
 ### Core units
@@ -77,6 +79,10 @@ The Features folder contains more feature-rich cross-platform implementations of
 There are demos for each of the features in the Demos folder
 Features include:
 
+#### Barcode
+
+Based on [Google ML Vision APIs](https://developers.google.com/ml-kit/vision), it allows you to scan an image and detect barcodes within it
+
 #### Biometric
 
 Android and iOS implementations of biometric functions, namely: Fingerprint recognition on Android, and Fingerprint and FaceID on iOS
@@ -97,6 +103,10 @@ Uses native APIs to allow users to select one or more files on the device, for A
 
 Android and iOS implementations of Firebase Cloud Messaging using their native libraries
 
+#### Location
+
+Android and iOS framework made specifically for location updates when the application is in any state (e.g. even when it is not running)
+
 #### NFC
 
 Near-Field Communication implementations for Android and iOS
@@ -104,6 +114,10 @@ Near-Field Communication implementations for Android and iOS
 #### Notifications
 
 Framework that is alternative to TNotificationCenter (that ships with Delphi) for Notifications on Android and iOS
+
+#### Proximity
+
+Support for the proximity sensor on Android and iOS, including switching the screen on/off e.g. when the user puts the device to their ear
 
 #### Share Items
 
@@ -113,6 +127,10 @@ A more feature-rich alternative for the Share Sheet implementation provided with
 
 Android and iOS implementations for speech-to-text services. On Android, the actual speech API is used, rather than via Intents
 
+#### Universal Links (iOS only)
+
+Allows users to follow links to content inside your app from your website.
+
 ### Planned Features
 
 In addition to the features listed above, several other features are [planned for Kastri](https://github.com/DelphiWorlds/Kastri/milestones), namely:
@@ -121,17 +139,17 @@ In addition to the features listed above, several other features are [planned fo
 
 This feature is currently in limbo, due to there being issues with making the functionality work. Please [contact me](https://github.com/DelphiWorlds/Kastri/issues/19) if you are interested in helping.
 
+#### Google SignIn
+
+A (hopefully) simplified variation on [Grijjy's excellent Google SignIn](https://github.com/grijjy/DelphiGoogleSignIn) implementation, **with added support for iOS**
+
 #### Photos Library
 
-For accessing photos stored on the device via the albums on Android and iOS. Photos selector implementation with multiple-select capability (similar to Facebook's implementation)
+For accessing photos stored on the device via the albums on Android and iOS
 
 #### Simple backend framework for managing push tokens
 
 A simple REST backend for managing push tokens and sending messages that can be customised to your needs. Complements the existing Firebase Cloud Messaging support.
-
-#### Universal Links
-
-Allows users to intelligently follow links to content inside your app from your website. Implemented natively on iOS
 
 The above features take time and resources to develop. Your help via [sponsorship](https://github.com/sponsors/DelphiWorlds) can help make them a reality!
 
